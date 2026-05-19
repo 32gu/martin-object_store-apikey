@@ -166,3 +166,6 @@ similar.opt-level = 3
 # Make release binaries a bit smaller
 lto = true
 codegen-units = 1
+
+[patch.crates-io]
+object_store = { git = "https://github.com/32gu/arrow-rs-object-store", branch = "main" }
