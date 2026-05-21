@@ -21,6 +21,9 @@ pub use admin::Catalog;
 #[cfg(feature = "unstable-schemas")]
 pub use admin::{__path_get_catalog, get_catalog};
 
+mod auth;
+pub use auth::ApiKeyMiddleware;
+
 #[cfg(feature = "_tiles")]
 mod tiles;
 #[cfg(all(feature = "_tiles", feature = "unstable-schemas"))]

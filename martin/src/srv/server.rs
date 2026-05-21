@@ -20,6 +20,7 @@ use crate::config::file::srv::{KEEP_ALIVE_DEFAULT, LISTEN_ADDRESSES_DEFAULT, Srv
 #[cfg(any(not(feature = "webui"), docsrs))]
 use crate::srv::admin::get_index_no_ui;
 use crate::srv::admin::{Catalog, get_catalog};
+use crate::srv::auth::ApiKeyMiddleware;
 #[cfg(all(feature = "webui", not(docsrs)))]
 use crate::srv::admin::{get_index_ui_disabled, webui};
 #[cfg(feature = "fonts")]
@@ -246,6 +247,20 @@ pub fn new_server(
             cors_middleware.is_some(),
             cors_middleware.unwrap_or_default(),
         ));
+
+        // ===== NEW SECTION: API KEY MIDDLEWARE =====
+        let api_key = std::env::var("API_KEY").ok();
+        let auth_enabled = std::env::var("AUTH_ENABLED")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+
+        let app = if let (Some(key), true) = (api_key, auth_enabled) {
+            app.wrap(ApiKeyMiddleware::new(key, true))
+        } else {
+            app.wrap(ApiKeyMiddleware::new(String::new(), false))
+        };
+        // ===========================================        
 
         #[cfg(feature = "metrics")]
         let app = app.wrap(prometheus.clone());

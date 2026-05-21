@@ -1,0 +1,109 @@
+PLANTILLA CLARA - INIT CONTAINER EN AZURE CONTAINER APPS (MARTIN)
+
+Datos ya prellenados de tu entorno:
+- subscriptionId: 14836bb3-ac93-4d71-9155-306181ff2bc5
+- resourceGroup: TransversalDemandPlatform
+- location: North Europe
+- managed identity client_id: eb27e449-70b1-4901-989d-b105e228de06
+- storage account: stgtdpnortheudev
+- blob container: sabc-martin-northeu-dev-01
+- container app: ca-martin-northeu-dev-01
+
+Paso 1: Exporta la configuracion actual de la app que vas a actualizar
+
+az containerapp show \
+  --name ca-martin-northeu-dev-01 \
+  --resource-group TransversalDemandPlatform \
+  -o yaml > containerapp.yaml
+
+Paso 2: En containerapp.yaml, ajusta SOLO estas secciones
+
+template:
+  volumes:
+    - name: work
+      storageType: EmptyDir
+
+  initContainers:
+    - name: ca-martin-northeu-dev-init-01
+      image: mcr.microsoft.com/azure-cli:2.64.0
+      command:
+        - sh
+        - -c
+        - |
+          set -eu
+
+          CLIENT_ID="eb27e449-70b1-4901-989d-b105e228de06"
+          ACCOUNT_NAME="stgtdpnortheudev"
+          CONTAINER_NAME="sabc-martin-northeu-dev-01"
+
+          az login --identity --client-id "$CLIENT_ID" --allow-no-subscriptions >/dev/null
+
+          az storage blob list \
+            --account-name "$ACCOUNT_NAME" \
+            --container-name "$CONTAINER_NAME" \
+            --auth-mode login \
+            --query "[].name" \
+            -o tsv \
+            | tr -d '\r' \
+            | grep '\.pmtiles$' > /tmp/pmtiles-list.txt || true
+
+          if [ ! -s /tmp/pmtiles-list.txt ]; then
+            echo "ERROR: no se encontraron archivos .pmtiles en $CONTAINER_NAME"
+            exit 1
+          fi
+
+          awk -v c="$CONTAINER_NAME" -v a="$ACCOUNT_NAME" -v cid="$CLIENT_ID" '
+          BEGIN {
+            print "pmtiles:";
+            print "  sources:";
+          }
+          {
+            id = $1;
+            gsub(/\.pmtiles$/, "", id);
+            gsub(/[\/.]/, "_", id);
+            print "    " id ":";
+            print "      path: \"abfss://" c "@" a ".dfs.core.windows.net/" $1 "\"";
+            print "      client_id: \"" cid "\"";
+          }' /tmp/pmtiles-list.txt > /work/pmtiles-section.yaml
+
+          printf "%s\n" "${MARTIN_CONFIG_BASE:-}" > /work/martin-config.yaml
+          cat /work/pmtiles-section.yaml >> /work/martin-config.yaml
+
+      env:
+        - name: MARTIN_CONFIG_BASE
+          value: |
+            keep_alive: 75
+            listen_addresses: "0.0.0.0:3000"
+            worker_processes: 8
+            web_ui: enable-for-all
+
+      resources:
+        cpu: 0.5
+        memory: 1Gi
+
+      volumeMounts:
+        - volumeName: work
+          mountPath: /work
+
+  containers:
+    - name: martin
+      command:
+        - sh
+        - -c
+        - martin --config /work/martin-config.yaml
+      volumeMounts:
+        - volumeName: work
+          mountPath: /work
+
+Paso 3: Aplica el cambio
+
+az containerapp update \
+  --name ca-martin-northeu-dev-01 \
+  --resource-group TransversalDemandPlatform \
+  --yaml containerapp.yaml
+
+Checklist rapido:
+- La UAMI usada por la app tiene rol Storage Blob Data Reader sobre la cuenta o el contenedor.
+- MARTIN_CONFIG_BASE no incluye bloque pmtiles para no duplicar.
+- El init container debe finalizar OK; si falla, Martin no arranca (esperado).
+
