@@ -47,7 +47,12 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 EXPOSE 3000
 
 # Punto de entrada: ejecutar martin
-ENTRYPOINT ["/usr/local/bin/martin"]
+# ENTRYPOINT ["/usr/local/bin/martin"]
+COPY placeholder.mbtiles /etc/martin/tiles/placeholder.mbtiles
+COPY martin-config.yaml /etc/martin/config.yaml
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Comando por defecto: mostrar ayuda si no se pasan argumentos
-CMD ["--help"]
+# CMD ["--help"]
